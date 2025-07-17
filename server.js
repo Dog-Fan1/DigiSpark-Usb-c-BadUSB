@@ -3,24 +3,47 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
-const DATA_FILE = 'data.txt';
+const DATA_FILE = path.resolve(__dirname, 'data.txt');
 
-app.use(express.text());
+app.use(express.text({ type: '*/*' })); // Accept any text-type body
+
+// Escape HTML characters to prevent XSS
+function escapeHtml(text) {
+  return text.replace(/[&<>"']/g, (char) => {
+    const escapeChars = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;',
+    };
+    return escapeChars[char];
+  });
+}
 
 app.post('/upload', (req, res) => {
   try {
-    fs.appendFileSync(DATA_FILE, req.body + '\n---\n');
+    const body = req.body?.trim();
+    if (!body) {
+      return res.status(400).send('Empty body');
+    }
+    fs.appendFileSync(DATA_FILE, body + '\n---\n');
     res.status(200).send('Data received');
   } catch (err) {
-    console.error(err);
+    console.error('Upload error:', err);
     res.status(500).send('Error saving data');
   }
 });
 
 app.get('/', (req, res) => {
   let data = '';
-  if (fs.existsSync(DATA_FILE)) {
-    data = fs.readFileSync(DATA_FILE, 'utf8');
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      data = fs.readFileSync(DATA_FILE, 'utf8');
+    }
+  } catch (err) {
+    console.error('Read error:', err);
+    data = 'Error reading data.';
   }
 
   res.send(`
@@ -36,7 +59,7 @@ app.get('/', (req, res) => {
       </head>
       <body>
         <h1>Collected Data</h1>
-        <pre>${data}</pre>
+        <pre>${escapeHtml(data)}</pre>
         <form method="POST" action="/wipe" onsubmit="return confirm('Are you sure you want to clear all data?');">
           <button type="submit">Wipe Data</button>
         </form>
@@ -52,7 +75,7 @@ app.post('/wipe', (req, res) => {
     }
     res.redirect('/');
   } catch (err) {
-    console.error(err);
+    console.error('Wipe error:', err);
     res.status(500).send('Error wiping data');
   }
 });
